@@ -1,0 +1,22 @@
+<?xml version="1.0" ?>
+
+<launch>
+
+<include file="$(find franka_lock_unlock)/launch/franka_start_single.launch">
+    <arg name="hostname" value="172.16.0.2"/>
+</include>
+
+<include file="$(find franka_lock_unlock)/launch/franka_start_single.launch">
+    <arg name="hostname" value="172.16.0.3"/>
+</include>
+
+<include file="$(find franka_lock_unlock)/launch/franka_start_single.launch">
+    <arg name="hostname" value="172.16.0.4"/>
+</include>
+
+<include file="$(find franka_lock_unlock)/launch/franka_start_single.launch">
+    <arg name="hostname" value="172.16.0.5"/>
+</include>
+
+
+</launch>

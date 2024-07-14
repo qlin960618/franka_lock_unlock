@@ -1,0 +1,18 @@
+<?xml version="1.0" ?>
+
+<launch>
+    <arg name="hostname"/>
+    <arg name="username" default="moonshot"/>
+    <arg name="password" default="moonshotfranka"/>
+
+    <node name="franka_lock_unlock_$(arg hostname)"
+          pkg="franka_lock_unlock"
+          type="__init__.py"
+          output="screen"
+          args="$(arg hostname) $(arg username) $(arg password) -u -w -r -p -c -l"
+    />
+
+<!--     <node name="franka_control" pkg="franka_control" type="franka_control_node" output="screen" respawn="true" > -->
+<!--         <param name="robot_ip" value="$(arg hostname)" /> -->
+<!--     </node> -->
+</launch>
