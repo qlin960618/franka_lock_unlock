@@ -4,18 +4,22 @@
 
 <include file="$(find franka_lock_unlock)/launch/franka_start_single.launch">
     <arg name="hostname" value="172.16.0.2"/>
+    <arg name="name" value="franka1"/>
 </include>
 
 <include file="$(find franka_lock_unlock)/launch/franka_start_single.launch">
     <arg name="hostname" value="172.16.0.3"/>
+    <arg name="name" value="franka2"/>
 </include>
 
 <include file="$(find franka_lock_unlock)/launch/franka_start_single.launch">
     <arg name="hostname" value="172.16.0.4"/>
+    <arg name="name" value="franka3"/>
 </include>
 
 <include file="$(find franka_lock_unlock)/launch/franka_start_single.launch">
     <arg name="hostname" value="172.16.0.5"/>
+    <arg name="name" value="franka4"/>
 </include>
 
 

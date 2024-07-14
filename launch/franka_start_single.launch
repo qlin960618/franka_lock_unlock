@@ -2,10 +2,11 @@
 
 <launch>
     <arg name="hostname"/>
+    <arg name="name"/>
     <arg name="username" default="moonshot"/>
     <arg name="password" default="moonshotfranka"/>
 
-    <node name="franka_lock_unlock_$(arg hostname)"
+    <node name="franka_lock_unlock_$(arg name)"
           pkg="franka_lock_unlock"
           type="__init__.py"
           output="screen"
