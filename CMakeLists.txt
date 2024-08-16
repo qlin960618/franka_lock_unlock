@@ -1,18 +1,22 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.8)
 project(franka_lock_unlock)
 
-find_package(catkin REQUIRED)
 
-catkin_python_setup()
+find_package(ament_cmake REQUIRED)
 
-catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES franka_lock_unlock
-#  CATKIN_DEPENDS other_catkin_pkg
-#  DEPENDS system_lib
+
+install(PROGRAMS
+        franka_lock_unlock/run.py
+        DESTINATION lib/${PROJECT_NAME})
+
+
+##### LAUNCH FILES #####
+
+install(DIRECTORY
+  launch
+  DESTINATION share/${PROJECT_NAME}/
 )
 
-include_directories(
-# include
-# ${catkin_INCLUDE_DIRS}
-)
+##END## LAUNCH FILES #####
+
+ament_package()
