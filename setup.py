@@ -21,7 +21,7 @@ setup(
     license='AGPLv3',
     entry_points={
         'console_scripts': [
-            'run = franka_lock_unlock.run:main'
+            'run = franka_lock_unlock.__init__:main'
         ],
     },
 )
