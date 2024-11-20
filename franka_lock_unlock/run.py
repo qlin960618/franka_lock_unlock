@@ -22,9 +22,13 @@ import atexit
 from threading import Event
 
 class FrankaLockUnlock:
-    def __init__(self, hostname: str, username: str, password: str, protocol: str = 'https', relock: bool = False, std_out=print):
+    def __init__(self, hostname: str, username: str, password: str, protocol: str = 'https', relock: bool = False, std_out=print,
+                 ignore_clean_up=False):
         requests.packages.urllib3.disable_warnings()
         self.print = std_out  # override print function
+        self.ignore_clean_up = ignore_clean_up
+        if self.ignore_clean_up:
+            self.print("WARNING: Ignoring clean up on shutdown.")
         self._session = requests.Session()
         self._session.verify = False
         self._hostname = f'{protocol}://{hostname}'
@@ -38,6 +42,9 @@ class FrankaLockUnlock:
 
     def _cleanup(self):
         self.print("Cleaning up...")
+        if self.ignore_clean_up:
+            self.print("Ignoring clean up.")
+            return
         if self._relock:
             self.run(unlock=False)
         if self._token is not None or self._token_id is not None:
@@ -48,7 +55,7 @@ class FrankaLockUnlock:
 
     @staticmethod
     def _encode_password(username, password):
-        bs = ','.join([str(b) for b in hashlib.sha256((f'{password}#{username}@franka').encode('utf-8')).digest()])
+        bs = ','.join([str(b) for b in hashlib.sha256(f'{password}#{username}@franka'.encode('utf-8')).digest()])
         return base64.encodebytes(bs.encode('utf-8')).decode('utf-8')
 
     def _login(self):
@@ -56,9 +63,9 @@ class FrankaLockUnlock:
         if self._logged_in:
             self.print("Already logged in.")
             return
-        login = self._session.post(urljoin(self._hostname, '/admin/api/login'), \
-                                           json={'login': self._username, \
-                                                 'password': self._encode_password(self._username, self._password)})
+        login = self._session.post(urljoin(self._hostname, '/admin/api/login'),
+                                   json={'login': self._username,
+                                         'password': self._encode_password(self._username, self._password)})
         assert login.status_code == 200, "Error logging in."
         self._session.cookies.set('authorization', login.text)
         self._logged_in = True
@@ -89,7 +96,7 @@ class FrankaLockUnlock:
             assert self._token_id is not None
             self.print("Already having a control token.")
             return
-        token_request = self._session.post(urljoin(self._hostname, f'/admin/api/control-token/request{"?force" if physically else ""}'), \
+        token_request = self._session.post(urljoin(self._hostname, f'/admin/api/control-token/request{"?force" if physically else ""}'),
                                            json={'requestedBy': self._username})
         assert token_request.status_code == 200, "Error requesting control token."
         json = token_request.json()
@@ -99,8 +106,8 @@ class FrankaLockUnlock:
 
     def _release_token(self):
         self.print("Releasing control token...")
-        token_delete = self._session.delete(urljoin(self._hostname, '/admin/api/control-token'), \
-                                                    json={'token': self._token})
+        token_delete = self._session.delete(urljoin(self._hostname, '/admin/api/control-token'),
+                                            json={'token': self._token})
         assert token_delete.status_code == 200, "Error releasing control token."
         self._token = None
         self._token_id = None
@@ -108,25 +115,32 @@ class FrankaLockUnlock:
 
     def _activate_fci(self):
         self.print("Activating FCI...")
-        fci_request = self._session.post(urljoin(self._hostname, f'/admin/api/control-token/fci'), \
+        fci_request = self._session.post(urljoin(self._hostname, f'/admin/api/control-token/fci'),
                                          json={'token': self._token})
         assert fci_request.status_code == 200, "Error activating FCI."
         self.print("Successfully activated FCI.")
 
     def _home_gripper(self):
         self.print("Homing the gripper...")
-        action = self._session.post(urljoin(self._hostname, f'/desk/api/gripper/homing'), \
+        action = self._session.post(urljoin(self._hostname, f'/desk/api/gripper/homing'),
                                     headers={'X-Control-Token': self._token})
         assert action.status_code == 200, "Error homing gripper."
         self.print(f'Successfully homed the gripper.')
 
     def _lock_unlock(self, unlock: bool, force: bool = False):
         self.print(f'{"Unlocking" if unlock else "Locking"} the robot...')
-        action = self._session.post(urljoin(self._hostname, f'/desk/api/joints/{"unlock" if unlock else "lock"}'), \
+        action = self._session.post(urljoin(self._hostname, f'/desk/api/joints/{"unlock" if unlock else "lock"}'),
                                     files={'force': force},
                                     headers={'X-Control-Token': self._token})
         assert action.status_code == 200, "Error requesting brake open/close action."
         self.print(f'Successfully {"unlocked" if unlock else "locked"} the robot.')
+
+    def _shutdown_robot(self):
+        self.print("Homing the gripper...")
+        action = self._session.post(urljoin(self._hostname, f'/admin/api/shutdown'),
+                                    headers={'X-Control-Token': self._token})
+        assert action.status_code == 200, "Error sending shutdown."
+        self.print(f'Successfully send shutdown signal.')
 
     def run(self, unlock: bool = False, force: bool = False, wait: bool = False, request: bool = False, persistent: bool = False, fci: bool = False, home: bool = False) -> None:
         assert not request or wait, "Requesting control without waiting for obtaining control is not supported."
@@ -163,6 +177,32 @@ class FrankaLockUnlock:
             if not persistent:
                 self._logout()
 
+    def run_shutdown(self, force: bool = False, wait: bool = False, request: bool = False) -> None:
+        assert not request or wait, "Requesting control without waiting for obtaining control is not supported."
+        self._login()
+        try:
+            assert self._token is not None or self._get_active_token_id() is None or wait, "Error requesting control, the robot is currently in use."
+            while True:
+                self._request_token(physically=request)
+                try:
+                    # Consider the timeout of 30 s for requesting physical access to the robot
+                    for _ in range(20) if request else count():
+                        if (not wait and not request) or self._is_active_token():
+                            self.print('Successfully acquired control over the robot.')
+                            self._shutdown_robot()
+                            return
+                        if request:
+                            self.print('Please press the button with the (blue) circle on the robot to confirm physical access.')
+                        elif wait:
+                            self.print('Please confirm the request message in the web interface on the logged in user.')
+                        sleep(1)
+                    # In case physical access was not confirmed, try again
+                    self._release_token()
+                finally:
+                    self._release_token()
+        finally:
+            self._logout()
+
 
 def main():
     try:
@@ -170,7 +210,9 @@ def main():
         from rclpy.node import Node
         rclpy.init()
         node_ = Node("franka_lock_unlock")
-        def print(*args_):  #override print function
+        node_.declare_parameters(namespace='', parameters=[("shutdown_request", rclpy.Parameter.Type.BOOL)])
+
+        def print_stdout(*args_):  #override print function
             if len(args_) == 1:
                 node_.get_logger().info(str(args_[0]))
             else:
@@ -179,18 +221,29 @@ def main():
         def wait():
             rclpy.spin(node_)
 
+        def if_shutdown_requested():
+            try:
+                return node_.get_parameter("shutdown_request").value
+            except Exception as e:
+                print_stdout(f"Error: {e}, assuming not requested.")
+                return False
+
         def on_shutdown():
             node_.destroy_node()
             rclpy.shutdown()
 
     except ImportError:
-        print = print
+        print_stdout = print
 
         def wait():
             Event().wait()
 
         def on_shutdown():
             pass
+
+        def if_shutdown_requested():
+            print("Run in shutdown execution is only available in ROS.")
+            return False
 
 
     parser = argparse.ArgumentParser(
@@ -209,23 +262,29 @@ def main():
     parser.add_argument('-c', '--fci', action='store_true', help='Activate the FCI.')
     parser.add_argument('-i', '--home', action='store_true', help='Home the gripper.')
     args, _ = parser.parse_known_args()
-    print("Connecting to ", args.hostname)
+    print_stdout("Connecting to ", args.hostname)
     assert not args.relock or args.unlock, "Relocking without prior unlocking is not possible."
     assert not args.relock or args.persistent, "Relocking without persistence would cause an immediate unlock-lock cycle."
 
     try:
         franka_lock_unlock = FrankaLockUnlock(
-            std_out=print,
-            hostname=args.hostname, username=args.username, password=args.password, relock=args.relock
+            std_out=print_stdout,
+            hostname=args.hostname, username=args.username, password=args.password, relock=args.relock,
+            ignore_clean_up=if_shutdown_requested()
         )
-        franka_lock_unlock.run(unlock=args.unlock, wait=args.wait, request=args.request, persistent=args.persistent, fci=args.fci, home=args.home)
+        if if_shutdown_requested():
+            print_stdout("Running shutdown...")
+            franka_lock_unlock.run_shutdown(force=args.unlock, wait=args.wait, request=args.request)
+        else:
+            print_stdout("Running lock/unlock...")
+            franka_lock_unlock.run(unlock=args.unlock, wait=args.wait, request=args.request, persistent=args.persistent, fci=args.fci, home=args.home)
 
-        if args.persistent:
-            print("Keeping persistent connection...")
+        if args.persistent and not if_shutdown_requested():
+            print_stdout("Keeping persistent connection...")
             wait()
 
     except Exception as e:
-        print(f"Error: {e}")
+        print_stdout(f"Error: {e}")
     finally:
         on_shutdown()
 
