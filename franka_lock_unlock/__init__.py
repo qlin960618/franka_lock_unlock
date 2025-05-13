@@ -115,9 +115,23 @@ class FrankaLockUnlock:
 
     def _home_gripper(self):
         self.print("Homing the gripper...")
-        action = self._session.post(urljoin(self._hostname, f'/desk/api/gripper/homing'), \
-                                    headers={'X-Control-Token': self._token})
-        assert action.status_code == 200, "Error homing gripper."
+        dest = {
+            "robot_version5.7.0": f'/desk/api/gripper/homing',
+            "robot_version5.8.0": f'/desk/api/end-effector/initialize',
+        }
+        has_success = False
+        for r_version, url in dest.items():
+            try:
+                action = self._session.post(urljoin(self._hostname, url), \
+                                            headers={'X-Control-Token': self._token})
+                assert action.status_code == 200, "Error homing gripper."
+                has_success = True
+                break
+            except AssertionError:
+                self.print(f"Failed to homing gripper with version {r_version} command.")
+        if not has_success:
+            raise AssertionError("Error homing gripper.")
+
         self.print(f'Successfully homed the gripper.')
 
     def _lock_unlock(self, unlock: bool, force: bool = False):
